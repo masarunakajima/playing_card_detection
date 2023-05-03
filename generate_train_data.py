@@ -11,18 +11,19 @@ import shutil
 import yaml
 
 # %% [markdown]
-# ## Input
+# ## Setting global parameters
 
 # %%
-wsop_directory = "rank_suit_wsop" 
-bg_directory = "dtd-r1/images"
-polygon_path = "polygons/"
-data_dir = "wsop_data"
+wsop_directory = "rank_suit_wsop"  # location of seed playing card images
+bg_directory = "dtd-r1/images" # location of background images
+
+data_dir = "wsop_data" # location of output data
+
 n_train = 10 ## I set 20000 for my case
 n_valid = 10 ## I set 2000 for my case
-n_test = 10 
+n_test = 10 ## I se  100 for my case
 
-iteration = 20
+iteration = 20 ## maximum number of cards to be placed in a single image
 
 # %% [markdown]
 # ## Define utility functions
@@ -301,8 +302,8 @@ def scale_image(img, roi, mask=np.array([]), fx=1.5, fy=1.5):
     # Scale the image
     scaled_img = cv.resize(img, None, fx=fx, fy=fy, interpolation=cv.INTER_CUBIC)
     scaled_height, scaled_width = scaled_img.shape[:2]
-    # Scale the polygon
-    scale_factor = np.array([fx, fy])  
+
+
     if len(mask) == 0:
         scaled_mask = np.ones((scaled_height, scaled_width, 1), dtype=np.uint8) 
     else:
@@ -359,8 +360,8 @@ def augment_image(img, roi, mask=np.array([]), angle_range=(0,360), kernel_range
 img = images[0]
 roi = rois[0]
 
-polygon = hull[0]
-img_poly = draw_hull(img, polygon, gray=True)
+hull = hull[0]
+img_poly = draw_hull(img, hull, gray=True)
 scaled_img, scaled_roi, mask = augment_image(img, roi)
 plot_images([img_poly, scaled_img, mask*200, scaled_roi])
 
@@ -390,13 +391,7 @@ plt.imshow(bg_img)
 # ## Paste cards to background image
 
 # %%
-# get polygon from mask
-def get_polygon_from_mask(mask):
-    # get the contours of the mask
-    contours, hierarchy = cv.findContours(mask, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-    # get the polygon from the contour
-    polygon = contours[0][:,0,:]
-    return polygon
+
 
 
 
@@ -416,7 +411,7 @@ def place_image(bg_img, rois_bg,  img, roi, img_mask, threshold = 0.2):
     img_mask_scale = img_mask_scale.astype(np.uint8)
 
 
-    # check if the image overlaps with any of the polygons
+    # check if the image overlaps with any of the rois
     areas = []
     new_rois = []
     for i in range(len(rois_bg)):
@@ -480,9 +475,9 @@ def place_cards(bg_file, images, rois, iteration= 20, threshold = 0.2, angle_ran
         img = images[index]
         roi = rois[index]
         # augment the image
-        scaled_img, scaled_polygon, mask = augment_image(img, roi, angle_range=angle_range, kernel_range=kernel_range, fx_range=fx_range, fy_range=fy_range)
+        scaled_img, roi, mask = augment_image(img, roi, angle_range=angle_range, kernel_range=kernel_range, fx_range=fx_range, fy_range=fy_range)
 
-        bg_img, rois_bg, success = place_image(bg_img, rois_bg, scaled_img, scaled_polygon, mask, threshold=threshold)
+        bg_img, rois_bg, success = place_image(bg_img, rois_bg, scaled_img, roi, mask, threshold=threshold)
         if success:
             image_idx.append(index)
 
