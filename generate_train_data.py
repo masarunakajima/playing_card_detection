@@ -23,7 +23,12 @@ n_train = 10 ## I set 20000 for my case
 n_valid = 10 ## I set 2000 for my case
 n_test = 10 ## I se  100 for my case
 
-iteration = 20 ## maximum number of cards to be placed in a single image
+
+args = {}
+args['angle_range'] = (-45,45)
+args['iteration'] = 20
+args['kernel_range'] = (1,2)
+args['dev_ratio'] = 0.5
 
 # %% [markdown]
 # ## Define utility functions
@@ -457,13 +462,13 @@ def place_image(bg_img, rois_bg,  img, roi, img_mask, threshold = 0.2):
 # %%
 
 
-def place_cards(bg_file, images, rois, iteration= 20, threshold = 0.2, angle_range=(0,360), kernel_range=(1,5)):
+def place_cards(bg_file, images, rois, iteration= 20, threshold = 0.2, angle_range=(-45,45), kernel_range=(1,5), dev_ratio = 0.7):
     bg_img = cv.imread(bg_file)
     height, width = bg_img.shape[:2]
     img_height, img_width = images[0].shape[:2]
-    fraction =  min(height, width) * 1.0 / max(img_height, img_width) /7
-    fx_range = (fraction - fraction /10, fraction + fraction /10)
-    fy_range = (fraction - fraction /10, fraction + fraction /10)
+    fraction =  min(height, width) * 1.0 / max(img_height, img_width) /6
+    fx_range = (fraction - fraction * dev_ratio, fraction + fraction * dev_ratio)
+    fy_range = (fraction - fraction * dev_ratio, fraction + fraction * dev_ratio)
     rois_bg = []
     image_idx = []
     threshold = 0.1
@@ -534,8 +539,8 @@ def get_label_text(bg_img, image_idx, boxes):
 
 # functioin for generating data
 def generate_data(directory, num_data, bg_files, images, rois, iteration= 10,
-                  threshold = 0.2,angle_range=(0,360), 
-                  kernel_range=(1,5)):
+                  threshold = 0.2, angle_range=(0,360), 
+                  kernel_range=(1,5), dev_ratio = 0.5):
     # create the directory if it does not exist
     if path.exists(directory):
         shutil.rmtree(directory)
@@ -560,7 +565,7 @@ def generate_data(directory, num_data, bg_files, images, rois, iteration= 10,
         bg_file = bg_files[np.random.randint(0, num_bg)]
         # place the cards
         bg_img, boxes, image_idx = place_cards(bg_file, images, rois, iteration= iteration,threshold=threshold, 
-                                               angle_range=angle_range, kernel_range=kernel_range)
+                                               angle_range=angle_range, kernel_range=kernel_range, dev_ratio = dev_ratio)
         # save the image
         cv.imwrite(path.join(images_dir, "{}.jpg".format(i)), bg_img)
         # get the label text
@@ -575,15 +580,15 @@ def generate_data(directory, num_data, bg_files, images, rois, iteration= 10,
 
 train_dir = path.join(data_dir, "train")
 
-generate_data(train_dir, n_train, bg_files, images, rois, iteration=iteration)
+generate_data(train_dir, n_train, bg_files, images, rois, **args)
 
 valid_dir = path.join(data_dir, "valid")
 
-generate_data(valid_dir, n_valid, bg_files, images, rois, iteration=iteration)
+generate_data(valid_dir, n_valid, bg_files, images, rois,  **args)
 
 test_dir = path.join(data_dir, "test")
 
-generate_data(test_dir, n_test, bg_files, images, rois, iteration=iteration)
+generate_data(test_dir, n_test, bg_files, images, rois, **args)
 
 
 # %%
