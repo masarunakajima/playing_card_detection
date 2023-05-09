@@ -114,6 +114,8 @@ for i in range(13):
         plt.axis('off')
 
 print("shape of cards: ", images[0].shape)
+# save in figs directory
+plt.savefig(path.join( "figures", "cards.png"), bbox_inches='tight')
     
 
 # %% [markdown]
@@ -135,6 +137,8 @@ for i in range(13):
         plt.imshow(images_box[i + j*13])
         plt.axis('off')
 
+# save in figs directory
+plt.savefig(path.join( "figures", "cards_box.png"), bbox_inches='tight')
 
 
 
@@ -196,6 +200,9 @@ for i in range(13):
         plt.subplot(4, 13, i + j*13 + 1)
         plt.imshow(images_hull[i + j*13])
         plt.axis('off')
+
+# save in figs directory
+plt.savefig(path.join( "figures", "cards_hull.png"), bbox_inches='tight')
 
 # %%
 # get masks from convex_hulls
@@ -372,15 +379,33 @@ plot_images([img_poly, scaled_img, mask*200, scaled_roi])
 
 
 
+
+
 # %% [markdown]
 # ## Prepare background images
 
 # %%
+## This part takes about 10 - 20 minutes to run
+import urllib.request
+import tarfile
+
 if not path.exists(bg_directory):
-    # !wget https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.0.1.tar.gz
-    # !tar xf dtd-r1.0.1.tar.gz
-    os.system('wget --no-check-certificate https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.tar.gz')
-    os.system('tar xf dtd-r1.tar.gz')
+    url = 'https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.tar.gz'
+    filename = 'dtd-r1.0.1.tar.gz'
+    urllib.request.urlretrieve(url, filename)
+
+    with tarfile.open(filename, 'r:gz') as tar:
+        tar.extractall()
+
+    # # !wget https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.0.1.tar.gz
+    # # !tar xf dtd-r1.0.1.tar.gz
+    # if 'linux' in sys.platform:
+
+    #     os.system('wget --no-check-certificate https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.tar.gz')
+    #     os.system('tar xf dtd-r1.tar.gz')
+    # elif 'win' in sys.platform:
+    #     ! Invoke-WebRequest -Uri https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.tar.gz -OutFile dtd-r1.tar.gz 
+    #     ! Expand-Archive -Path dtd-r1.tar.gz -DestinationPath .
 
 
 bg_files = glob(path.join(bg_directory,"*/*.jpg"))
@@ -462,7 +487,7 @@ def place_image(bg_img, rois_bg,  img, roi, img_mask, threshold = 0.2):
 # %%
 
 
-def place_cards(bg_file, images, rois, iteration= 20, threshold = 0.2, angle_range=(-45,45), kernel_range=(1,5), dev_ratio = 0.7):
+def place_cards(bg_file, images, rois, iteration= 20, threshold = 0.2, angle_range=(-45,45), kernel_range=(1,2), dev_ratio = 0.7):
     bg_img = cv.imread(bg_file)
     height, width = bg_img.shape[:2]
     img_height, img_width = images[0].shape[:2]
@@ -504,6 +529,8 @@ for box in boxes:
 
 
 plt.imshow(bg_img)
+# save in figure folder
+cv.imwrite(path.join('figures', "background.jpg"), bg_img)
 
 # %% [markdown]
 # ## Create data directory for yolov7
