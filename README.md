@@ -63,3 +63,10 @@ Note that the red is shown in blue.
 ![Cards](figures/cards.png)
 
 First I detected the region of interest in each card, namely the rank and suit at the corner of the card.
+![Convex](figures/cards_hull.png)
+
+I then randomly scaled and rotated the cards and placed them on a background images, keeping track of their positions. When placing the cards, I made sure that the rank-suit portion of each card is not hidden by other cards.
+![background](figures/background.jpg)
+
+
+
