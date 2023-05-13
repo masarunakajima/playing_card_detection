@@ -12,5 +12,5 @@ I borrowed some ideas of data generation from [geaxgx](https://github.com/geaxgx
 
 In this project, I used the cards used in WSOP Poker, as shown below.
 
-![Cards](figures/cards.png =800x600)
+![Cards](figures/cards.png)
 
