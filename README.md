@@ -6,8 +6,8 @@ I borrowed some ideas of data generation from [geaxgx](https://github.com/geaxgx
 ## Table of Contents
 
 - [Requirements](#requirements)
-- [How to use this repo](#usage)
-- [How it works](#content)
+- [How to use this repo](#how-to-use-this-repo)
+- [How it works](#how-it-works)
 
 ## Requirements
 
