@@ -1,40 +1,16 @@
-# %%
 import cv2 as cv
 from os import path
 import os
 from glob import glob
-from random import random
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import shutil
 import yaml
+import argparse
+import urllib.request
+import tarfile
 
-# %% [markdown]
-# ## Setting global parameters
-
-# %%
-wsop_directory = "rank_suit_wsop"  # location of seed playing card images
-bg_directory = "dtd-r1/images" # location of background images
-
-data_dir = "wsop_data" # location of output data
-
-n_train = 10 ## I set 20000 for my case
-n_valid = 10 ## I set 2000 for my case
-n_test = 10 ## I se  100 for my case
-
-
-args = {}
-args['angle_range'] = (-45,45)
-args['iteration'] = 20
-args['kernel_range'] = (1,2)
-args['dev_ratio'] = 0.5
-
-# %% [markdown]
-# ## Define utility functions
-# 
-
-# %%
 def draw_hull(img, hull, gray=False):
     img_copy = img.copy()
     if gray:
@@ -74,165 +50,113 @@ def get_corners(mask):
     x_max = np.max(coords[:,1])
     return (x_min, y_min), (x_max, y_max)
 
-# %% [markdown]
-# ## Rescale the cards to have the same height
 
-# %%
+def get_card_images(dir_path, new_height=200):
+    # get files in the directory
+    files = os.listdir(dir_path)
+    # load all images in the directory
+    # with red and blue switched
+    rank_suits = [f.split(".")[0] for f in files]
 
-# get files in the directory
-files = os.listdir(wsop_directory)
-# load all images in the directory
-# with red and blue switched
-rank_suits = [f.split(".")[0] for f in files]
+    images = [cv.imread(path.join(dir_path, file)) for file in files]
 
-images = [cv.imread(path.join(wsop_directory, file)) for file in files]
+    # get the max width and height
+    max_width = max([img.shape[1] for img in images])
+    max_height = max([img.shape[0] for img in images])
 
-# get the max width and height
-max_width = max([img.shape[1] for img in images])
-max_height = max([img.shape[0] for img in images])
+    # make the card to same size
+    for i in range(len(images)):
+        images[i] = cv.copyMakeBorder(images[i], 0, 0, 0, 
+                                      max_width - images[i].shape[1], 
+                                      cv.BORDER_CONSTANT, value=(255, 255, 255))
 
-# make the card to same size
-for i in range(len(images)):
-    images[i] = cv.copyMakeBorder(images[i], 0, 0, 0, max_width - images[i].shape[1], cv.BORDER_CONSTANT, value=(255, 255, 255))
+    # set the maximum height 
+    new_height = 200
 
-
-# set the maximum height 
-max_height = 200
-
-# resize the images
-for i in range(len(images)):
-    h, w = images[i].shape[:2]
-    scale = max_height * 1.0 / h
-    images[i] = cv.resize(images[i], (int(w*scale), int(h*scale)))
-
-
-plt.figure(figsize=(15, 7))
-for i in range(13):
-    for j in range(4):
-        plt.subplot(4, 13, i + j*13 + 1)
-        plt.imshow(images[i + j*13])
-        plt.axis('off')
-
-print("shape of cards: ", images[0].shape)
-# save in figs directory
-plt.savefig(path.join( "figures", "cards.png"), bbox_inches='tight')
+    # resize the images
+    for i in range(len(images)):
+        h, w = images[i].shape[:2]
+        scale = new_height * 1.0 / h
+        images[i] = cv.resize(images[i], (int(w*scale), int(h*scale)))
     
+    return images, rank_suits
 
-# %% [markdown]
-# ## Pick the boudning box
+def get_convex_hull(images, min_area=100, box_width=68, box_height=150, verbose=False):
 
-# %%
-box_width = 68
-box_height = 150
-xy0 = (0,0)
-xy1 = (box_width, box_height)
-
-# draw box on all images and plot
-images_box = [cv.rectangle(img.copy(), xy0, xy1, (255, 0, 0), 4) for img in images]
-
-plt.figure(figsize=(15, 7))
-for i in range(13):
-    for j in range(4):
-        plt.subplot(4, 13, i + j*13 + 1)
-        plt.imshow(images_box[i + j*13])
-        plt.axis('off')
-
-# save in figs directory
-plt.savefig(path.join( "figures", "cards_box.png"), bbox_inches='tight')
+    xy0 = (0,0)
+    xy1 = (box_width, box_height)
 
 
+    # Get convex hulls within the bounding box for each card
+    # and plot the convex hulls
+    images_hull = []
+    images_all = []
+    convex_hulls = []
+    for i in range(len(images)):
+        img_copy = images[i].copy()
+        # restrict to the bounding box
+        img = img_copy[xy0[1]:xy1[1], xy0[0]:xy1[0]]
+        # convert to grayscale
+        gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+        # take the negative
+        gray = 255 - gray
+        # threshold the image
+        ret, thresh = cv.threshold(gray, 80, 255, 0)
+        # find contours
+        contours, hierarchy = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+        # get convex hull for each contour
+        all_hulls = [cv.convexHull(c) for c in contours]
+        # draw all hulls
+        img_hulls = images[i].copy()
+        for hull in all_hulls:
+            img_hulls = draw_hull(img_hulls, hull)
+        images_all.append(img_hulls)
+        # get the areas
+        areas = [cv.contourArea(c) for c in contours]
+        # get the indexes of contours with areas larger than min_area
+        indexes = [i for i in range(len(areas)) if areas[i] > min_area]
+        # combined the selected contours
+        cnt = np.concatenate([contours[i] for i in indexes])
+        # get the convex hull
+        hull = cv.convexHull(cnt)
+        convex_hulls.append(hull)
+        # draw the convex hull
+        img_hull = draw_hull(img_copy, hull)
+        images_hull.append(img_hull)
 
-# %% [markdown]
-# ## Draw convex hulls
-
-# %%
-min_gray = 80
-min_area = 100
-
-# Get convex hulls within the bounding box for each card
-# and plot the convex hulls
-images_hull = []
-images_all = []
-convex_hulls = []
-for i in range(len(images)):
-    img_copy = images[i].copy()
-    # restrict to the bounding box
-    img = img_copy[xy0[1]:xy1[1], xy0[0]:xy1[0]]
-    # convert to grayscale
-    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    # take the negative
-    gray = 255 - gray
-    # threshold the image
-    ret, thresh = cv.threshold(gray, 80, 255, 0)
-    # find contours
-    contours, hierarchy = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-    # get convex hull for each contour
-    all_hulls = [cv.convexHull(c) for c in contours]
-    # draw all hulls
-    img_hulls = images[i].copy()
-    for hull in all_hulls:
-        img_hulls = draw_hull(img_hulls, hull)
-    images_all.append(img_hulls)
-    # get the areas
-    areas = [cv.contourArea(c) for c in contours]
-    # get the indexes of contours with areas larger than min_area
-    indexes = [i for i in range(len(areas)) if areas[i] > min_area]
-    # combined the selected contours
-    cnt = np.concatenate([contours[i] for i in indexes])
-    # get the convex hull
-    hull = cv.convexHull(cnt)
-    convex_hulls.append(hull)
-    # draw the convex hull
-    img_hull = draw_hull(img_copy, hull)
-    images_hull.append(img_hull)
-
-plt.figure(figsize=(15, 7))
-for i in range(13):
-    for j in range(4):
-        plt.subplot(4, 13, i + j*13 + 1)
-        plt.imshow(images_all[i + j*13])
-        plt.axis('off')
+    if verbose:
+        plt.figure(figsize=(15, 7))
+        for i in range(13):
+            for j in range(4):
+                plt.subplot(4, 13, i + j*13 + 1)
+                plt.imshow(images_all[i + j*13])
+                plt.axis('off')
 
 
-plt.figure(figsize=(15, 7))
-for i in range(13):
-    for j in range(4):
-        plt.subplot(4, 13, i + j*13 + 1)
-        plt.imshow(images_hull[i + j*13])
-        plt.axis('off')
+        plt.figure(figsize=(15, 7))
+        for i in range(13):
+            for j in range(4):
+                plt.subplot(4, 13, i + j*13 + 1)
+                plt.imshow(images_hull[i + j*13])
+                plt.axis('off')
 
-# save in figs directory
-plt.savefig(path.join( "figures", "cards_hull.png"), bbox_inches='tight')
+    return convex_hulls
 
-# %%
-# get masks from convex_hulls
-rois = []
-for i in range(len(images)):
-    height, width = images[i].shape[:2]
-    convex_full = convex_hulls[i]
-    mask = np.zeros((height, width, 1), dtype=np.uint8)
-    if len(convex_full) >= 3:
-        pts = np.array(convex_full, np.int32)
-        pts = pts.reshape((-1, 1, 2))
-        cv.fillPoly(mask, [pts], 1)
+def get_rois(convex_hulls):
+    rois = []
+    for i in range(len(images)):
+        height, width = images[i].shape[:2]
+        convex_full = convex_hulls[i]
+        mask = np.zeros((height, width, 1), dtype=np.uint8)
+        if len(convex_full) >= 3:
+            pts = np.array(convex_full, np.int32)
+            pts = pts.reshape((-1, 1, 2))
+            cv.fillPoly(mask, [pts], 1)
 
-    rois.append(mask)
+        rois.append(mask)
+    return rois
 
-plt.figure(figsize=(15, 7))
-for i in range(13):
-    for j in range(4):
-        plt.subplot(4, 13, i + j*13 + 1)
-        plt.imshow(rois[i + j*13], cmap='gray')
-        plt.axis('off')
 
-# %% [markdown]
-# ## Image manipulation
-
-# %% [markdown]
-# ### Rotate image and points
-# 
-
-# %%
 def rotate_image(img, angle, roi, mask=np.array([])):
 
     # Get the height and width of the image
@@ -278,36 +202,13 @@ def rotate_image(img, angle, roi, mask=np.array([])):
     return rotated_img, rotated_roi, rotated_mask
 
 
-# %%
-# test the rotate_image function
-img = images[0]
-hull = convex_hulls[0]
-roi = rois[0]
-img_poly = draw_hull(img, hull)
-
-rotated_img, rotated_roi, mask = rotate_image(img, 30, roi)
-
-plot_images([img_poly, rotated_img, mask, rotated_roi])
-
-# %% [markdown]
-# ### Blur image
-
-# %%
 ## Blur the image
 def blur_image(img, kernel_size=(5, 5)):
     # Blur the image
     blurred_img = cv.blur(img, ksize=kernel_size)
 
     return blurred_img
-# test the blur_image function
-img = images[20]
-blurred_img= blur_image(img)
-plot_images([img, blurred_img])
 
-# %% [markdown]
-# ### Scale the image
-
-# %%
 # Define a function to scale the image
 def scale_image(img, roi, mask=np.array([]), fx=1.5, fy=1.5):
     
@@ -325,29 +226,6 @@ def scale_image(img, roi, mask=np.array([]), fx=1.5, fy=1.5):
     scaled_roi = scaled_roi.reshape((scaled_height, scaled_width, 1)).astype(np.uint8)
     return scaled_img, scaled_roi, scaled_mask
 
-# test the scale_image function
-img = images[0]
-roi = rois[0]
-hull = convex_hulls[0]
-img_poly = draw_hull(img, hull, gray=True)
-scaled_img, scaled_roi, mask = scale_image(img, roi, fx=0.5, fy=1.5)
-plot_images([img_poly, scaled_img, mask, scaled_roi])
-
-
-# %% [markdown]
-# 
-# ## Test with rotate, blur, and scale
-
-# %%
-
-
-
-import time
-
-# set seed based on current time
-np.random.seed(int(time.time()))
-
-
 def augment_image(img, roi, mask=np.array([]), angle_range=(0,360), kernel_range=(1,10), fx_range=(0.3,0.6), fy_range=(0.3,0.6)):
     # blur image
     kernel_size = (np.random.randint(kernel_range[0], kernel_range[1]), np.random.randint(kernel_range[0], kernel_range[1]))
@@ -360,69 +238,30 @@ def augment_image(img, roi, mask=np.array([]), angle_range=(0,360), kernel_range
 
     # rotate image
     angle = np.random.randint(angle_range[0], angle_range[1])
-    img, roi, mask = rotate_image(img, angle, roi, mask=mask)
-    
+    img, roi, mask = rotate_image(img, angle, roi, mask=mask)  
 
 
 
     return img, roi, mask
 
 
-# test the augment_image function
-img = images[0]
-roi = rois[0]
+def get_background_images(bg_directory):
+    ## This part takes about 10 - 20 minutes to run
 
-hull = hull[0]
-img_poly = draw_hull(img, hull, gray=True)
-scaled_img, scaled_roi, mask = augment_image(img, roi)
-plot_images([img_poly, scaled_img, mask*200, scaled_roi])
+    if not path.exists(bg_directory):
+        print("downloading background images...")
+        print("This will take about 10 - 20 minutes to run.")
+        url = 'https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.tar.gz'
+        filename = 'dtd-r1.0.1.tar.gz'
+        urllib.request.urlretrieve(url, filename)
 
+        with tarfile.open(filename, 'r:gz') as tar:
+            tar.extractall()
 
+        print("Background images downloaded!")
 
-
-
-# %% [markdown]
-# ## Prepare background images
-
-# %%
-## This part takes about 10 - 20 minutes to run
-import urllib.request
-import tarfile
-
-if not path.exists(bg_directory):
-    url = 'https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.tar.gz'
-    filename = 'dtd-r1.0.1.tar.gz'
-    urllib.request.urlretrieve(url, filename)
-
-    with tarfile.open(filename, 'r:gz') as tar:
-        tar.extractall()
-
-    # # !wget https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.0.1.tar.gz
-    # # !tar xf dtd-r1.0.1.tar.gz
-    # if 'linux' in sys.platform:
-
-    #     os.system('wget --no-check-certificate https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.tar.gz')
-    #     os.system('tar xf dtd-r1.tar.gz')
-    # elif 'win' in sys.platform:
-    #     ! Invoke-WebRequest -Uri https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.tar.gz -OutFile dtd-r1.tar.gz 
-    #     ! Expand-Archive -Path dtd-r1.tar.gz -DestinationPath .
-
-
-bg_files = glob(path.join(bg_directory,"*/*.jpg"))
-num_bg = len(bg_files)
-print("Number of background images:", num_bg)
-
-
-# %%
-bg_img = cv.imread(bg_files[np.random.randint(0, num_bg)])
-plt.imshow(bg_img)
-
-# %% [markdown]
-# ## Paste cards to background image
-
-# %%
-
-
+    bg_files = glob(path.join(bg_directory,"*", "*.jpg"))
+    return bg_files
 
 
 # Define a function to randomly place an image on a background image
@@ -480,13 +319,6 @@ def place_image(bg_img, rois_bg,  img, roi, img_mask, threshold = 0.2):
 
     return bg_img, rois_bg, True
 
-
-
-    
-
-# %%
-
-
 def place_cards(bg_file, images, rois, iteration= 20, threshold = 0.2, angle_range=(-45,45), kernel_range=(1,2), dev_ratio = 0.7):
     bg_img = cv.imread(bg_file)
     height, width = bg_img.shape[:2]
@@ -518,30 +350,6 @@ def place_cards(bg_file, images, rois, iteration= 20, threshold = 0.2, angle_ran
 
     return bg_img, boxes, image_idx
 
-# randomly select a background image file
-bg_file = bg_files[np.random.randint(0, num_bg)]
-
-bg_img, boxes, image_idx = place_cards(bg_file, images, rois)
-
-# draw the boxes
-for box in boxes:
-    cv.rectangle(bg_img, box[0], box[1], (0,255,0), 2)
-
-
-plt.imshow(bg_img)
-# save in figure folder
-cv.imwrite(path.join('figures', "background.jpg"), bg_img)
-
-# %% [markdown]
-# ## Create data directory for yolov7
-
-# %%
-
-if not path.exists(data_dir):
-    os.makedirs(data_dir)
-
-
-# %%
 # function to return label texts
 def get_label_text(bg_img, image_idx, boxes):
     h, w = bg_img.shape[:2]
@@ -602,23 +410,22 @@ def generate_data(directory, num_data, bg_files, images, rois, iteration= 10,
             f.write(label_text)
 
 
-# %%
+def generate_dataset(data_dir, bg_files, images, rois, n_train, n_valid, n_test, **kargs):
+    if not path.exists(data_dir):
+        os.makedirs(data_dir)
 
+    train_dir = path.join(data_dir, "train")
+    print("Generating training data in: {}".format(train_dir) )
+    generate_data(train_dir, n_train, bg_files, images, rois, **kargs)
 
-train_dir = path.join(data_dir, "train")
+    valid_dir = path.join(data_dir, "valid")
+    print("Generating validation data in: {}".format(valid_dir) )   
+    generate_data(valid_dir, n_valid, bg_files, images, rois,  **kargs)
 
-generate_data(train_dir, n_train, bg_files, images, rois, **args)
+    test_dir = path.join(data_dir, "test")
+    print("Generating test data in: {}".format(test_dir) )
+    generate_data(test_dir, n_test, bg_files, images, rois, **kargs)
 
-valid_dir = path.join(data_dir, "valid")
-
-generate_data(valid_dir, n_valid, bg_files, images, rois,  **args)
-
-test_dir = path.join(data_dir, "test")
-
-generate_data(test_dir, n_test, bg_files, images, rois, **args)
-
-
-# %%
 # Create data.yaml file
 def create_yaml_text(data_dir, classes):
     data_yaml = dict(
@@ -629,15 +436,53 @@ def create_yaml_text(data_dir, classes):
     )
     return data_yaml
 
-data_yaml = create_yaml_text(data_dir, rank_suits)
-data_yaml_path = path.join(data_dir, "data.yaml")
-with open(data_yaml_path, "w") as f:
-    yaml.dump(data_yaml, f)
+
+# main function
+if __name__ == "__main__":
+
+    # Create the parser
+    parser = argparse.ArgumentParser(description='Generates training data.')
+
+    # Add command-line options
+    parser.add_argument('-i', '--inputdir', default='rank_suit_wsop', 
+                        help='Specify input directory.')
+    parser.add_argument('-b', '--bgdir', default='dtd-r1/images', 
+                        help='Specify background image directory.')
+    parser.add_argument('-o', '--outdir', default='data', help='Specify output directory.')
+    parser.add_argument('-v', '--verbose', default=True, action='store_true', 
+                        help='Enable verbose mode.')
+    parser.add_argument('-t', '--ntrain', default=10, help='Number of train images.')
+    parser.add_argument('-l', '--nvalid', default=10, help='Number of valid images.')
+    parser.add_argument('-e', '--ntest', default=10, help='Number of test images.')
+
+
+    kargs = {}
+    kargs['angle_range'] = (-45,45)
+    kargs['iteration'] = 20
+    kargs['kernel_range'] = (1,2)
+    kargs['dev_ratio'] = 0.5
+
+    # Parse the command-line arguments
+    args = parser.parse_args()
     
+    # get the card images
+    images, rank_suits = get_card_images(args.inputdir)
 
+    # get the convex hulls around the rank and the suit
+    convex_hulls = get_convex_hull(images, verbose=args.verbose)
 
+    # Convert the convex hulls (polygons) to masks
+    rois = get_rois(convex_hulls)
 
-# %%
+    # get back ground image file paths
+    bg_files = get_background_images(args.bgdir)
+   
+    # generate the dataset
+    generate_dataset(args.outdir, bg_files, images, rois, args.ntrain, args.nvalid, args.ntest, 
+                  **kargs)
 
-
-
+    # create data.yaml file
+    data_yaml = create_yaml_text(args.outdir, rank_suits)
+    data_yaml_path = path.join(args.outdir, "data.yaml")
+    with open(data_yaml_path, "w") as f:
+        yaml.dump(data_yaml, f)
