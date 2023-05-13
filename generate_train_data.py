@@ -451,9 +451,9 @@ if __name__ == "__main__":
     parser.add_argument('-o', '--outdir', default='data', help='Specify output directory.')
     parser.add_argument('-v', '--verbose', default=True, action='store_true', 
                         help='Enable verbose mode.')
-    parser.add_argument('-t', '--ntrain', default=10, help='Number of train images.')
-    parser.add_argument('-l', '--nvalid', default=10, help='Number of valid images.')
-    parser.add_argument('-e', '--ntest', default=10, help='Number of test images.')
+    parser.add_argument('-t', '--ntrain', default=10, help='Number of train images.', type=int)
+    parser.add_argument('-l', '--nvalid', default=10, help='Number of valid images.', type=int)
+    parser.add_argument('-e', '--ntest', default=10, help='Number of test images.', type=int)
 
 
     kargs = {}
